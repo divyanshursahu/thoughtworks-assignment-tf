@@ -1,0 +1,86 @@
+---
+- name: AppServer
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    mysql_root_password: "Password1"
+  tasks:
+    - name: install mariadb
+      yum:
+        name:
+          - mariadb-server
+          - mariadb
+          - MySQL-python
+        state: latest
+    - name: start mariadb
+      service:
+        name: mariadb
+        enabled: true
+        state: started
+    - name: mysql_root_password
+      mysql_user:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        user: root
+        check_implicit_admin: true
+        password: "{{ mysql_root_password }}"
+        host: localhost
+    - name: remove remote root
+      mysql_user:
+        check_implicit_admin: true
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        user: root
+        host: "{{ ansible_fqdn }}"
+        state: absent
+    - name: Create a new database with name wikidatabase
+      mysql_db:
+        name: wikidatabase
+        state: present
+        login_user: root
+        login_password: "{{mysql_root_password}}"
+        login_host: localhost
+    - name: Create database wiki user with password and all database privileges and WITH GRANT OPTION
+      mysql_user:
+        login_user: root
+        login_password: "{{mysql_root_password}}"
+        login_host: localhost
+        name: wiki
+        password: 12345
+        priv: 'wikidatabase.*:ALL,GRANT'
+        state: present
+    - name: Installing Remi Repo
+      shell: |
+         sudo yum install -y http://rpms.remirepo.net/enterprise/remi-release-7.rpm
+    - name: install php packages
+      yum:
+        enablerepo: "remi,remi-php73"
+        name:
+          - php
+          - php-mysqlnd
+          - php-gd
+          - php-xml
+          - php-mbstring
+          - php-json
+          - php-intl
+        state: latest
+    - name: install httpd
+      yum:
+        name: httpd
+        state: latest
+    - name: downloading wikimedia files and httpd configuration
+      shell: |
+          cd /var/www
+          sudo wget https://releases.wikimedia.org/mediawiki/1.37/mediawiki-1.37.0.tar.gz --no-check-certificate
+          sudo tar -zxf mediawiki-1.37.0.tar.gz
+          sudo ln -s mediawiki-1.37.0/ mediawiki
+          sudo chown -R apache:apache mediawiki-1.37.0 mediawiki
+          sed -i '119 s+/var/www/html+/var/www+' /etc/httpd/conf/httpd.conf
+          sed -i '131 s+/var/www/html+/var/www+' /etc/httpd/conf/httpd.conf
+          sed -i '134 i DirectoryIndex index.html index.html.var index.php' /etc/httpd/conf/httpd.conf
+    - name: starting httpd
+      service:
+         name: httpd
+         enabled: true
+         state: started
